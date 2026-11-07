@@ -49,7 +49,12 @@
   .pular:focus { left: 0; }
 
   .pagina { max-width: 52rem; margin: 0 auto; padding: 1rem 1rem 2rem; }
-  header h1 { margin: .25rem 0 .5rem; font-size: 1.8em; line-height: 1.2; }
+  .topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+  header h1 { margin: .25rem 1rem .5rem 0; font-size: 1.8em; line-height: 1.2; }
+  #bt-config { margin: .25rem 0 .5rem; }
+  #bt-config[aria-expanded="true"] { background: var(--accent); color: #000; border-color: var(--accent); }
+  .painel-config { padding: .25rem 1rem 1rem; background: var(--card); border: 2px solid var(--border); border-radius: 8px; }
+  .painel-config h2 { margin-top: .75rem; }
   h2 { font-size: 1.35em; line-height: 1.3; margin: 1.5rem 0 .5rem; }
   section { margin-bottom: 1rem; }
 
@@ -129,15 +134,34 @@
 <a class="pular" href="#conteudo" id="link-pular">Pular para o conteúdo</a>
 
 <div class="pagina">
-  <header>
+  <header class="topo">
     <h1>Vídeos</h1>
+    <button type="button" id="bt-config" class="secundario" aria-expanded="false" aria-controls="sec-config" hidden>Configurações</button>
   </header>
 
   <main id="conteudo" tabindex="-1">
     <div id="boas-vindas" class="aviso" hidden>
-      <p style="margin:0">Para começar, cadastre sua chave da API do YouTube em
-        <a href="#t-config" id="link-config">Configurações</a>, no fim da página.</p>
+      <p style="margin:0">Para começar, cadastre sua chave da API do YouTube no campo
+        <a href="#campo-chave" id="link-config">Chave da API</a>, logo abaixo.</p>
     </div>
+
+    <section id="sec-config" class="painel-config" aria-labelledby="t-config">
+      <h2 id="t-config" tabindex="-1">Configurações</h2>
+      <p id="estado-chave"></p>
+      <form id="form-chave" novalidate>
+        <label for="campo-chave">Chave da API do YouTube</label>
+        <input id="campo-chave" type="text" autocomplete="off" autocapitalize="off"
+               autocorrect="off" spellcheck="false"
+               aria-describedby="erro-chave dica-chave">
+        <p id="erro-chave" class="erro-campo"></p>
+        <p id="dica-chave" class="dica">A chave fica guardada só neste aparelho. Ela começa com “AIza”.</p>
+        <div class="controles">
+          <button type="submit" id="bt-salvar">Salvar chave</button>
+          <button type="button" id="bt-apagar" class="secundario" hidden>Apagar chave</button>
+          <button type="button" id="bt-fechar-config" class="secundario" hidden>Fechar configurações</button>
+        </div>
+      </form>
+    </section>
 
     <section aria-labelledby="t-busca">
       <h2 id="t-busca">Buscar no YouTube</h2>
@@ -176,22 +200,6 @@
       <button type="button" id="bt-mais" class="secundario" hidden>Mais resultados</button>
     </section>
 
-    <section aria-labelledby="t-config">
-      <h2 id="t-config" tabindex="-1">Configurações</h2>
-      <p id="estado-chave"></p>
-      <form id="form-chave" novalidate>
-        <label for="campo-chave">Chave da API do YouTube</label>
-        <input id="campo-chave" type="text" autocomplete="off" autocapitalize="off"
-               autocorrect="off" spellcheck="false"
-               aria-describedby="erro-chave dica-chave">
-        <p id="erro-chave" class="erro-campo"></p>
-        <p id="dica-chave" class="dica">A chave fica guardada só neste aparelho. Ela começa com “AIza”.</p>
-        <div class="controles">
-          <button type="submit">Salvar chave</button>
-          <button type="button" id="bt-apagar" class="secundario" hidden>Apagar chave</button>
-        </div>
-      </form>
-    </section>
   </main>
 
   <footer>
@@ -238,6 +246,9 @@
   var btLegenda = $('bt-legenda');
   var btMais = $('bt-mais');
   var btApagar = $('bt-apagar');
+  var btConfig = $('bt-config');
+  var btFecharConfig = $('bt-fechar-config');
+  var secConfig = $('sec-config');
 
   var estado = {
     chave: ler(K_CHAVE),
@@ -338,7 +349,7 @@
       return 'O limite diário de buscas da sua chave acabou. Ele é renovado todo dia; tente de novo amanhã.';
     }
     if (motivo === 'keyInvalid' || /API key not valid/i.test(texto)) {
-      return 'A chave da API não é válida. Confira a chave em Configurações.';
+      return 'A chave da API não é válida. Confira a chave no botão Configurações, no topo da página.';
     }
     if (motivo === 'accessNotConfigured' || /has not been used|is disabled/i.test(texto)) {
       return 'A YouTube Data API v3 não está ativada no projeto da sua chave. Ative no Google Cloud e tente de novo.';
@@ -490,7 +501,8 @@
       return;
     }
     if (!estado.chave) {
-      mostrarAlerta('Para buscar, primeiro cadastre sua chave da API do YouTube em Configurações.');
+      mostrarAlerta('Para buscar, primeiro cadastre sua chave da API do YouTube.');
+      abrirConfig(false);
       campoChave.focus();
       return;
     }
@@ -705,14 +717,46 @@
     var p = $('estado-chave');
     if (estado.chave) {
       p.textContent = 'Chave salva neste aparelho (termina em ' + estado.chave.slice(-4) + ').';
+      $('bt-salvar').textContent = 'Trocar chave';
       btApagar.hidden = false;
+      btFecharConfig.hidden = false;
+      btConfig.hidden = false;
       $('boas-vindas').hidden = true;
     } else {
       p.textContent = 'Nenhuma chave salva ainda.';
+      $('bt-salvar').textContent = 'Salvar chave';
       btApagar.hidden = true;
+      btFecharConfig.hidden = true;
+      btConfig.hidden = true;
       $('boas-vindas').hidden = false;
     }
   }
+
+  /* Painel de configurações: aberto sempre que não há chave; com chave, abre pelo botão do topo. */
+  function abrirConfig(focar) {
+    secConfig.hidden = false;
+    btConfig.setAttribute('aria-expanded', 'true');
+    if (focar) $('t-config').focus();
+  }
+  function fecharConfig(devolverFoco) {
+    if (!estado.chave) return;
+    secConfig.hidden = true;
+    btConfig.setAttribute('aria-expanded', 'false');
+    limparErroCampo(campoChave, 'erro-chave');
+    campoChave.value = '';
+    if (devolverFoco) btConfig.focus();
+  }
+  btConfig.addEventListener('click', function () {
+    if (secConfig.hidden) abrirConfig(true);
+    else fecharConfig(true);
+  });
+  btFecharConfig.addEventListener('click', function () { fecharConfig(true); });
+  secConfig.addEventListener('keydown', function (ev) {
+    if ((ev.key === 'Escape' || ev.keyCode === 27) && estado.chave) {
+      ev.preventDefault();
+      fecharConfig(true);
+    }
+  });
 
   $('form-chave').addEventListener('submit', function (ev) {
     ev.preventDefault();
@@ -731,8 +775,9 @@
     campoChave.value = '';
     mostrarEstadoChave();
     limparAlerta();
+    fecharConfig(false);
     campoBusca.focus();
-    anunciar('Chave salva. Agora você já pode buscar.');
+    anunciar('Chave salva. Para trocar depois, use o botão Configurações no topo.');
   });
 
   btApagar.addEventListener('click', function () {
@@ -740,6 +785,7 @@
     estado.chave = '';
     remover(K_CHAVE);
     mostrarEstadoChave();
+    abrirConfig(false);
     campoChave.focus();
     anunciar('Chave apagada.');
   });
@@ -757,6 +803,8 @@
   /* ---------- Início ---------- */
   atualizarBotaoLegenda();
   mostrarEstadoChave();
+  if (estado.chave) fecharConfig(false);
+  else abrirConfig(false);
 })();
 </script>
 </body>
