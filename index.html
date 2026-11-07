@@ -51,7 +51,8 @@
   .pagina { max-width: 52rem; margin: 0 auto; padding: 1rem 1rem 2rem; }
   .topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; }
   header h1 { margin: .25rem 1rem .5rem 0; font-size: 1.8em; line-height: 1.2; }
-  #bt-config { margin: .25rem 0 .5rem; }
+  .acoes-topo { display: flex; flex-wrap: wrap; margin: .25rem -.25rem .5rem; }
+  .acoes-topo button { margin: .25rem; }
   #bt-config[aria-expanded="true"] { background: var(--accent); color: #000; border-color: var(--accent); }
   .painel-config { padding: .25rem 1rem 1rem; background: var(--card); border: 2px solid var(--border); border-radius: 8px; }
   .painel-config h2 { margin-top: .75rem; }
@@ -136,7 +137,10 @@
 <div class="pagina">
   <header class="topo">
     <h1>Vídeos</h1>
-    <button type="button" id="bt-config" class="secundario" aria-expanded="false" aria-controls="sec-config" hidden>Configurações</button>
+    <div class="acoes-topo">
+      <button type="button" id="bt-inicio" class="secundario">Início</button>
+      <button type="button" id="bt-config" class="secundario" aria-expanded="false" aria-controls="sec-config" hidden>Configurações</button>
+    </div>
   </header>
 
   <main id="conteudo" tabindex="-1">
@@ -258,7 +262,8 @@
     videoAtual: null,
     botaoOrigem: null,
     contador: 0,
-    buscando: false
+    buscando: false,
+    geracao: 0
   };
 
   /* ---------- Avisos ---------- */
@@ -456,10 +461,12 @@
   function executarBusca(mais) {
     if (estado.buscando) return;
     estado.buscando = true;
+    var geracao = estado.geracao;
     limparAlerta();
     anunciar(mais ? 'Carregando mais resultados…' : 'Buscando “' + estado.consulta + '”…');
 
     buscar(estado.consulta, mais ? estado.proxima : null).then(function (r) {
+      if (geracao !== estado.geracao) return;
       estado.proxima = r.proxima;
       if (!mais) lista.innerHTML = '';
       var primeiroNovo = null;
@@ -484,6 +491,7 @@
         anunciar(plural(r.videos.length, 'novo vídeo', 'novos vídeos') + '. Agora são ' + total + ' na lista.');
       }
     }).catch(function (e) {
+      if (geracao !== estado.geracao) return;
       $('status').textContent = '';
       mostrarAlerta(mensagemErro(e));
     }).then(function () {
@@ -788,6 +796,32 @@
     abrirConfig(false);
     campoChave.focus();
     anunciar('Chave apagada.');
+  });
+
+  /* ---------- Botão Início: volta ao estado inicial e limpa a busca ---------- */
+  $('bt-inicio').addEventListener('click', function () {
+    estado.geracao++;
+    estado.buscando = false;
+    clearTimeout(timerInicio);
+    if (player && playerPronto) { try { player.stopVideo(); } catch (e) {} }
+    secPlayer.hidden = true;
+    desmarcarAtual();
+    estado.videoAtual = null;
+    estado.botaoOrigem = null;
+    lista.innerHTML = '';
+    secResultados.hidden = true;
+    btMais.hidden = true;
+    estado.consulta = '';
+    estado.proxima = null;
+    campoBusca.value = '';
+    limparErroCampo(campoBusca, 'erro-busca');
+    limparAlerta();
+    if (estado.chave) fecharConfig(false);
+    document.title = 'Vídeos – busca acessível no YouTube';
+    try { window.scrollTo(0, 0); } catch (e) {}
+    if (estado.chave) campoBusca.focus();
+    else campoChave.focus();
+    anunciar('Página inicial. A busca foi limpa.');
   });
 
   /* ---------- Links internos que movem o foco ---------- */
