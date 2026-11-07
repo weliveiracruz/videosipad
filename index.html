@@ -53,7 +53,7 @@
   header h1 { margin: .25rem 1rem .5rem 0; font-size: 1.8em; line-height: 1.2; }
   .acoes-topo { display: flex; flex-wrap: wrap; margin: .25rem -.25rem .5rem; }
   .acoes-topo button { margin: .25rem; }
-  #bt-config[aria-expanded="true"] { background: var(--accent); color: #000; border-color: var(--accent); }
+  #bt-historico[aria-expanded="true"], #bt-config[aria-expanded="true"] { background: var(--accent); color: #000; border-color: var(--accent); }
   .painel-config { padding: .25rem 1rem 1rem; background: var(--card); border: 2px solid var(--border); border-radius: 8px; }
   .painel-config h2 { margin-top: .75rem; }
   h2 { font-size: 1.35em; line-height: 1.3; margin: 1.5rem 0 .5rem; }
@@ -139,6 +139,7 @@
     <h1>Vídeos</h1>
     <div class="acoes-topo">
       <button type="button" id="bt-inicio" class="secundario">Início</button>
+      <button type="button" id="bt-historico" class="secundario" aria-expanded="false" aria-controls="sec-historico">Histórico</button>
       <button type="button" id="bt-config" class="secundario" aria-expanded="false" aria-controls="sec-config" hidden>Configurações</button>
     </div>
   </header>
@@ -165,6 +166,17 @@
           <button type="button" id="bt-fechar-config" class="secundario" hidden>Fechar configurações</button>
         </div>
       </form>
+    </section>
+
+    <section id="sec-historico" class="painel-config" aria-labelledby="t-historico" hidden>
+      <h2 id="t-historico" tabindex="-1">Histórico</h2>
+      <p class="dica" style="margin-top:0">Vídeos que você abriu neste aparelho, do mais recente para o mais antigo.</p>
+      <p id="historico-vazio">Nenhum vídeo assistido ainda.</p>
+      <ul id="lista-historico" class="lista"></ul>
+      <div class="controles">
+        <button type="button" id="bt-limpar-historico" class="secundario" hidden>Limpar histórico</button>
+        <button type="button" id="bt-fechar-historico" class="secundario">Fechar histórico</button>
+      </div>
     </section>
 
     <section aria-labelledby="t-busca">
@@ -218,6 +230,8 @@
   var API = 'https://www.googleapis.com/youtube/v3/';
   var K_CHAVE = 'videosAcessiveis.chave';
   var K_LEGENDA = 'videosAcessiveis.legendas';
+  var K_HISTORICO = 'videosAcessiveis.historico';
+  var MAX_HISTORICO = 50;
 
   function $(id) { return document.getElementById(id); }
 
@@ -253,6 +267,9 @@
   var btConfig = $('bt-config');
   var btFecharConfig = $('bt-fechar-config');
   var secConfig = $('sec-config');
+  var btHistorico = $('bt-historico');
+  var secHistorico = $('sec-historico');
+  var listaHistorico = $('lista-historico');
 
   var estado = {
     chave: ler(K_CHAVE),
@@ -420,7 +437,8 @@
     return partes.join(' ');
   }
 
-  function criarItem(v) {
+  function criarItem(v, opcoes) {
+    opcoes = opcoes || {};
     estado.contador++;
     var li = document.createElement('li');
     li.className = 'item';
@@ -448,9 +466,16 @@
     var meta = document.createElement('p');
     meta.className = 'meta';
     meta.id = idMeta;
-    meta.textContent = textoMeta(v);
+    meta.textContent = textoMeta(v) + (opcoes.quando ? ' Assistido ' + quandoFalado(opcoes.quando) + '.' : '');
 
-    bt.addEventListener('click', function () { abrirVideo(v, bt); });
+    bt.addEventListener('click', function () {
+      if (opcoes.doHistorico) {
+        fecharHistorico(false);
+        abrirVideo(v, btHistorico);
+      } else {
+        abrirVideo(v, bt);
+      }
+    });
 
     corpo.appendChild(bt);
     corpo.appendChild(meta);
@@ -538,7 +563,7 @@
     bt.appendChild(marca);
   }
   function desmarcarAtual() {
-    var atuais = lista.querySelectorAll('[aria-current="true"]');
+    var atuais = document.querySelectorAll('.bt-video[aria-current="true"]');
     for (var i = 0; i < atuais.length; i++) {
       atuais[i].removeAttribute('aria-current');
       var m = atuais[i].querySelector('.marca');
@@ -561,7 +586,9 @@
     limparAlerta();
     estado.videoAtual = v;
     estado.botaoOrigem = bt;
-    marcarAtual(bt);
+    registrarHistorico(v);
+    if (bt.className.indexOf('bt-video') !== -1) marcarAtual(bt);
+    else desmarcarAtual();
     secPlayer.hidden = false;
     tituloPlayer.textContent = 'Reproduzindo: ' + v.titulo;
     document.title = v.titulo + ' – Vídeos';
@@ -710,7 +737,7 @@
     estado.videoAtual = null;
     document.title = 'Vídeos – busca acessível no YouTube';
     var alvo = estado.botaoOrigem;
-    if (alvo && document.body.contains(alvo)) alvo.focus();
+    if (alvo && document.body.contains(alvo) && alvo.offsetParent !== null) alvo.focus();
     else campoBusca.focus();
     anunciar('Vídeo fechado.');
   });
@@ -742,6 +769,7 @@
 
   /* Painel de configurações: aberto sempre que não há chave; com chave, abre pelo botão do topo. */
   function abrirConfig(focar) {
+    fecharHistorico(false);
     secConfig.hidden = false;
     btConfig.setAttribute('aria-expanded', 'true');
     if (focar) $('t-config').focus();
@@ -798,6 +826,81 @@
     anunciar('Chave apagada.');
   });
 
+  /* ---------- Histórico de vídeos assistidos (guardado só neste aparelho) ---------- */
+  function lerHistorico() {
+    try {
+      var h = JSON.parse(ler(K_HISTORICO) || '[]');
+      return Object.prototype.toString.call(h) === '[object Array]' ? h : [];
+    } catch (e) { return []; }
+  }
+  function gravarHistorico(lista) { gravar(K_HISTORICO, JSON.stringify(lista)); }
+
+  function registrarHistorico(v) {
+    var h = lerHistorico().filter(function (x) { return x && x.id !== v.id; });
+    h.unshift({
+      id: v.id, titulo: v.titulo, canal: v.canal, miniatura: v.miniatura,
+      segundos: v.segundos, legendas: v.legendas, aoVivo: false, quando: Date.now()
+    });
+    if (h.length > MAX_HISTORICO) h = h.slice(0, MAX_HISTORICO);
+    gravarHistorico(h);
+    if (!secHistorico.hidden) desenharHistorico();
+  }
+
+  function doisDigitos(n) { return (n < 10 ? '0' : '') + n; }
+  function quandoFalado(ms) {
+    var d = new Date(ms), hoje = new Date();
+    var ontem = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 1);
+    var hora = doisDigitos(d.getHours()) + ':' + doisDigitos(d.getMinutes());
+    if (d.toDateString() === hoje.toDateString()) return 'hoje às ' + hora;
+    if (d.toDateString() === ontem.toDateString()) return 'ontem às ' + hora;
+    return 'em ' + doisDigitos(d.getDate()) + '/' + doisDigitos(d.getMonth() + 1) + '/' + d.getFullYear() + ' às ' + hora;
+  }
+
+  function desenharHistorico() {
+    var h = lerHistorico();
+    listaHistorico.innerHTML = '';
+    h.forEach(function (v) {
+      listaHistorico.appendChild(criarItem(v, { quando: v.quando, doHistorico: true }));
+    });
+    $('historico-vazio').hidden = h.length > 0;
+    $('bt-limpar-historico').hidden = h.length === 0;
+    $('t-historico').textContent = h.length
+      ? 'Histórico: ' + plural(h.length, 'vídeo', 'vídeos')
+      : 'Histórico';
+  }
+
+  function abrirHistorico(focar) {
+    if (estado.chave) fecharConfig(false);
+    desenharHistorico();
+    secHistorico.hidden = false;
+    btHistorico.setAttribute('aria-expanded', 'true');
+    if (focar) $('t-historico').focus();
+  }
+  function fecharHistorico(devolverFoco) {
+    secHistorico.hidden = true;
+    btHistorico.setAttribute('aria-expanded', 'false');
+    if (devolverFoco) btHistorico.focus();
+  }
+
+  btHistorico.addEventListener('click', function () {
+    if (secHistorico.hidden) abrirHistorico(true);
+    else fecharHistorico(true);
+  });
+  $('bt-fechar-historico').addEventListener('click', function () { fecharHistorico(true); });
+  secHistorico.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' || ev.keyCode === 27) {
+      ev.preventDefault();
+      fecharHistorico(true);
+    }
+  });
+  $('bt-limpar-historico').addEventListener('click', function () {
+    if (!window.confirm('Apagar todo o histórico de vídeos deste aparelho?')) return;
+    remover(K_HISTORICO);
+    desenharHistorico();
+    $('t-historico').focus();
+    anunciar('Histórico apagado.');
+  });
+
   /* ---------- Botão Início: volta ao estado inicial e limpa a busca ---------- */
   $('bt-inicio').addEventListener('click', function () {
     estado.geracao++;
@@ -817,6 +920,7 @@
     limparErroCampo(campoBusca, 'erro-busca');
     limparAlerta();
     if (estado.chave) fecharConfig(false);
+    fecharHistorico(false);
     document.title = 'Vídeos – busca acessível no YouTube';
     try { window.scrollTo(0, 0); } catch (e) {}
     if (estado.chave) campoBusca.focus();
